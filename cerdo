@@ -1,0 +1,1331 @@
+#!/usr/bin/perl -w
+# ----------------------------------------------------------------------
+# Cerdo - Manage your SIDs!
+# Copyright (C) 2010, Edward Fjellskål <edwardfjellskaal@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+# ----------------------------------------------------------------------
+
+use Curses;
+use Curses::UI;
+#use DBI;
+use Cwd;
+use IO::File;
+use Getopt::Long qw/:config auto_version auto_help/;
+use Term::ReadKey;
+use Storable;
+use Data::Dumper;
+use strict;
+use warnings;
+
+=head1 NAME
+
+ cerdo.pl - Farming your SIDs!
+
+=head1 VERSION
+
+ 0.0.1
+
+=head1 SYNOPSIS
+
+ $ cerdo.pl [options]
+
+ OPTIONS:
+
+ -c|--configfile : spesify path to configfile (/etc/cerdo/cerdo.conf)
+ -w|--workdir    : spesify path to persistant work dir (/var/lib/cerdo/)
+ -r|--rulesdir   : directory to look for rules in..
+ -s|--sensor     : default <sensor> to be loaded at startup (localhost)
+ -h|--help       : this help message
+ --version       : show prads2snort.pl version
+
+=cut
+
+################################################################################
+############# C - O - N - F - I - G - U - R - A - T - I - O - N ################
+################################################################################
+our $VERSION                = qq(0.0.1);
+our $CONFIGFILE             = qq(/etc/cerdo/cerdo.conf);
+our $WORKDIR                = qq(/var/lib/cerdo/);
+our $RULESDIR               = qq(/var/lib/cerdo/rules/);
+our $POLICIESDIR            = qq(/var/lib/cerdo/policies/);
+our $POLICY                 = 1;
+our $SENSORSDIR             = qq(/var/lib/cerdo/sensors/);
+our $SENSOR                 = 1;
+our $TEMPLATEDIR            = qq(/var/lib/cerdo/templates/);
+our $OUTFILE                = qq(cerdo.rules);
+our $DISABLEFILE            = qq(disabled.conf);
+our $ENABLEFILE             = qq(enabled.conf);
+our $LOGFILE                = qq(/var/lib/cerdo/logs/cerdo.log);
+our $DEBUG                  = 0;
+our $SRULEDB                = {};
+our $MRULEDB                = {};
+our %DISABLEDB;
+our %ENABLEDB;
+
+use Local::State PO => '/var/lib/cerdo/state/cerdo-policy.state';
+use Local::State SE => '/var/lib/cerdo/state/cerdo-sensor.state';
+use Local::State SF => [ '/var/lib/cerdo/state/cerdo.state', readonly => 1 ];
+
+Getopt::Long::GetOptions(
+    'configfile|i=s'        => \$CONFIGFILE,
+    'workdir|o=s'           => \$WORKDIR,
+    'rulesdir|d=s'          => \$RULESDIR,
+    'sensor|s=s'            => \$SENSOR,
+    #'version'               => \$VERS,
+);
+
+########################  TEST DATA #################################
+our $policy_values = [];
+our $policy_labels = {};
+our $sensor_values = [];
+our $sensor_labels = {};
+
+our $search_values = [];
+our $search_labels = {};
+
+sub get_search_values {
+    $search_values = [];
+    foreach my $nr (sort (keys (%$PO::SEARCH))) {
+        push (@$search_values, $nr);
+    }
+}
+
+sub get_search_labels {
+    $search_labels = {};
+    foreach my $nr (sort (keys (%$PO::SEARCH))) {
+        $search_labels->{$nr} = $PO::SEARCH->{$nr}->{'search'};
+    }
+}
+
+get_search_values();
+get_search_labels();
+
+our $stype_values = [];
+our $stype_labels = {};
+
+sub get_stype_values {
+    $stype_values = [];
+    foreach my $nr (sort (keys (%$SF::STYPE))) {
+        push (@$stype_values, $nr);
+    }
+}
+
+sub get_stype_labels {
+    $stype_labels = {};
+    foreach my $nr (sort (keys (%$SF::STYPE))) {
+        $stype_labels->{$nr} = $SF::STYPE->{$nr}->{'type'};
+    }
+}
+
+sub get_sensor_values {
+    $sensor_values = [];
+    foreach my $nr (sort (keys (%$SE::SENSORS))) {
+        push (@$sensor_values, $nr);    
+    }
+}
+
+sub get_sensor_labels {
+    $sensor_labels = {};
+    foreach my $nr (sort (keys (%$SE::SENSORS))) {
+        $sensor_labels->{$nr} = $SE::SENSORS->{$nr}->{'name'};
+    }
+}
+
+sub get_next_sensorid {
+    foreach my $nr (sort { $b <=> $a } (keys (%$SE::SENSORS))) {
+        next if not defined $nr;
+        return $nr + 1;
+    }
+}
+
+sub get_next_policyid {
+    foreach my $nr (sort { $b <=> $a } (keys (%$PO::POLICIES))) {
+        next if not defined $nr;
+        return $nr + 1;
+    }
+}
+
+sub get_policy_values {
+    $policy_values = [];
+    foreach my $nr (sort (keys (%$PO::POLICIES))) {
+        push (@$policy_values, $nr);
+    }
+}
+
+sub get_policy_labels {
+    $policy_labels = {};
+    foreach my $nr (sort (keys (%$PO::POLICIES))) {
+        $policy_labels->{$nr} = $PO::POLICIES->{$nr}->{'name'};
+    }
+}
+
+parse_all_rule_files();
+our $rules_cnt = scalar(keys(%$MRULEDB));
+our $rules_values = [];
+sub get_rules_values {
+    $rules_values = [];
+    foreach my $nr (sort { $b <=> $a } (keys (%$MRULEDB))) {
+        push (@$rules_values, $nr);
+    }
+}
+get_rules_values();
+
+our $rules_labels = {};
+our $rules_labels_tmp = {};
+
+sub get_rules_labels {
+    $rules_labels = {};
+    foreach my $nr (sort { $b <=> $a } (keys (%$MRULEDB))) {
+        $rules_labels->{$nr} = $MRULEDB->{$nr}->{'message'};
+        $rules_labels_tmp->{$nr} = $MRULEDB->{$nr}->{'message'};
+    }
+}
+get_rules_labels();
+
+get_stype_values();
+get_stype_labels();
+get_sensor_values();
+get_sensor_labels();
+get_policy_values();
+get_policy_labels();
+
+# ----------------------------------------------------------------------
+# Menu definition
+# ----------------------------------------------------------------------
+
+my @menu = (
+    { -label => 'File',
+        -submenu => [
+            { -label => 'Configuration  ^O', -value => \&dummy },
+            #{ -label => 'Connect to DB      ^O', -value => \&dummy },
+            #{ -label => 'Save DB connection ^S', -value => \&dummy },
+            { -label => 'Exit           ^Q', -value => \&exit_dialog }
+        ]
+    },
+    { -label => 'Sensors',
+        -submenu => [
+            { -label => 'Update rules for sensor(s)', -value => \&dummy },
+            { -label => 'Select Sensor', -value => \&select_sensor },
+            { -label => 'Add Sensor', -value => \&add_new_sensor },
+            { -label => 'Delete Sensor', -value => \&dummy }
+        ]
+    },
+    { -label => 'Groups',
+        -submenu => [
+            { -label => 'Manage Group', -value => \&dummy },
+            { -label => 'Add a Group', -value => \&dummy },
+            { -label => 'Delete a Group', -value => \&dummy }
+        ]
+    },
+    { -label => 'Policies',
+        -submenu => [
+            { -label => 'Update rules in all Policies', -value => \&dummy },
+            { -label => 'Select Policy', -value => \&select_policy },
+            { -label => 'Add Policy', -value => \&add_new_policy },
+            { -label => 'Delete Policy', -value => \&dummy }
+        ]
+    },
+    { -label => 'Rules',
+        -submenu => [
+            { -label => 'Check for rule updates', -value => \&dummy },
+            { -label => 'Search in rules', -value => \&search_rules },
+            { -label => 'View a rule', -value => \&dummy },
+            { -label => 'Add a rule', -value => \&dummy },
+            { -label => 'Edit a rule', -value => \&dummy },
+            { -label => 'Delete a rule', -value => \&dummy }
+        ]
+    },
+    { -label => 'Help',
+        -submenu => [
+            { -label => 'About', -value => \&about_dialog },
+            { -label => 'Howto', -value => \&dummy }
+        ]
+    }
+);
+
+# ----------------------------------------------------------------------
+# Create widgets
+# ----------------------------------------------------------------------
+
+# Create the root. Everything else will be built up from here.
+our $cui = new Curses::UI (
+    -clear_on_exit => 1,
+    -color_support => 1
+);
+
+# Add the menu to the root.
+our $menu = $cui->add(
+    'menu','Menubar',
+    -fg   => "white",
+    -bg   => "green",
+    -menu => \@menu,
+);
+
+# Create the screen.
+our $screen = $cui->add(
+    'screen', 'Window',
+    -padtop  => 1, # leave space for the menu
+    -border  => 0,
+    -ipad    => 0,
+);
+
+our $sensor_win = $cui->add(
+    'sensor_win', 'Window',
+    -padtop  => 1, # leave space for the menu
+    -border  => 0,
+    -ipad    => 0,
+);
+
+# Add the help text to the sensor_window
+$sensor_win->add(
+   'help', 'Label',
+   -y             => -2,
+   -width         => -1,
+   -reverse       =>  1,
+   -paddingspaces =>  1,
+   -text          =>
+         " ^C Quit from the program  ^S Select Sensor   ^W toggle Wrapping\n"
+       . " ^X Open the menu          ^P Select Policy   ^R toggle hard Returns viewing\n",
+);
+
+our $policy_win = $cui->add(
+    'policy_win', 'Window',
+    -padtop  => 1, # leave space for the menu
+    -border  => 0,
+    -ipad    => 0,
+);
+
+$policy_win->add(
+   'help', 'Label',
+   -y             => -2,
+   -width         => -1,
+   -reverse       =>  1,
+   -paddingspaces =>  1,
+   -text          =>
+         " ^C Quit from the program  ^S Select Sensor   ^W toggle Wrapping\n"
+       . " ^X Open the menu          ^P Select Policy   ^R toggle hard Returns viewing\n",
+);
+
+our $rules_win = $cui->add(
+    'rules_win', 'Window',
+    -padtop  => 1, # leave space for the menu
+    -border  => 0,
+    -ipad    => 0,
+);
+
+# We don't want STDERR output to clutter the screen.
+open (STDERR, ">> $LOGFILE") or die "[!] Error opening $LOGFILE : $!\n";
+
+################################################################################
+############# F - U - N - C - T - I - O - N - S - ##############################
+################################################################################
+=head1 FUNCTIONS
+
+=head2 dummy
+
+ Do nothing!
+
+=cut
+
+sub dummy {
+    return;
+}
+
+################################################################################
+## Funtions for manipulating SE::SENSORS
+
+=head2 display_sensor
+
+ Build the layout for displaying sensor info and management
+ options.
+
+=cut
+
+sub display_sensor {
+
+    $SENSOR = 1 if not defined $SENSOR;
+    if (not defined $SE::SENSORS->{$SENSOR}) {
+        $cui->error(-message => 'You need to choose a sensor!');
+        return;
+    }
+
+    # We add the editor widget to this screen.
+    $sensor_win->add('sensor', 'Label',-text => "Sensor: " . $SE::SENSORS->{1}->{'name'}, -x=>1, -y=>1, -reverse=>1, -bold=>1, -width => -1, -paddingspaces => 1);
+
+    $sensor_win->add('type','Label',-text=>"Type         : " . $SE::SENSORS->{1}->{'type'},-x=>1,-y=>3,-bold=>1,-width => -1);
+    $sensor_win->add('info','Label',-text=>"Info         : " . $SE::SENSORS->{1}->{'info'},-x=>1,-y=>4,-bold=>1,-width => -1);
+    $sensor_win->add('first','Label',-text=>"First added  : " . $SE::SENSORS->{1}->{'time_created'},-x=>1,-y=>5,-bold=>1,-width => -1);
+    $sensor_win->add('last','Label',-text=>"Last edit    : " . $SE::SENSORS->{1}->{'time_edited'},-x=>1,-y=>6,-bold=>1,-width => -1);
+    $sensor_win->add('comment','Label',-text=>"Last comment : " . $SE::SENSORS->{1}->{'comment'},-x=>1,-y=>7,-bold=>1,-width => -1);
+    $sensor_win->add(undef,'Label',-text=>"Choose options to edit:",-x=>1,-y=>9,-underline=>1,-width => -1);
+
+    my $sensor_policies_conf = $sensor_win->add(
+        undef, 'Buttonbox',
+        -y => 11,
+        -x => 2,
+        -buttons => [
+            {
+                -label => "[ Policies      ]",
+                -value => "mange policies",
+                -onpress => \&configure_sensor_policies,
+            }
+        ],
+    );
+
+    my $sensor_preprocessors_conf = $sensor_win->add(
+        undef, 'Buttonbox',
+        -y => 12,
+        -x => 2,
+        -buttons => [
+            {
+                -label => "[ Preprocessors ]",
+                -value => "configure preprocessors",
+                -onpress => \&configure_sensor_preprocessors,
+            }
+        ],
+    );
+
+    my $sensor_thresholds_conf = $sensor_win->add(
+        undef, 'Buttonbox',
+        -y => 13,
+        -x => 2,
+        -buttons => [
+            {
+                -label => "[ Thresholds    ]",
+                -value => "edit thresholds",
+                -onpress => \&dummy,
+            }
+        ],
+    );
+
+     my $sensor_supressions_conf = $sensor_win->add(
+        undef, 'Buttonbox',
+        -y => 14,
+        -x => 2,
+        -buttons => [
+            {
+                -label => "[ Supressions   ]",
+                -value => "edit supressions",
+                -onpress => \&dummy,
+            }
+        ],
+    );
+}
+
+=head2 select_sensor
+
+ Popup window which lets you select a sensor or
+ cancle the selction process.
+
+=cut
+
+sub select_sensor {
+    my $caller = shift;
+    my $swin = $cui->add(
+        'select_sensor_window', 'Window',
+        -border => 1,
+        -ipad => 2,
+        -height => 20,
+        -width => 60,
+        -centered => 1,
+        -title => "Select a sensor",
+    );
+
+    get_sensor_values();
+    get_sensor_labels();
+
+    my $popupbox = $swin->add(
+        'mypopupbox', 'Popupmenu',
+        -x => 4, -y => 2,
+        -values    => $sensor_values,
+        -labels    => $sensor_labels,
+    );
+
+    my $buttons = $swin->add(
+        'buttons', 'Buttonbox',
+        -x => 4, -y => 5,
+        -buttons => [
+            { -label => '< Select >',
+                -onpress => sub {
+                    my $this = shift;
+                    $SENSOR = $popupbox->get();
+                    $this->parent->loose_focus;
+                    update_sensor_info();
+                    $sensor_win->focus;
+                    $cui->delete('select_sensor_window');
+                },
+            },
+            { -label => '< Cancel >',
+                -onpress => sub {
+                    my $this = shift;
+                    #$this->parent->loose_focus;
+                    #$swin->modalfocus;
+                    $this->parent->loose_focus;
+                    $cui->delete('select_sensor_window');
+                },
+            },
+        ],
+    );
+
+    $popupbox->focus();
+    $swin->modalfocus;
+    $cui->delete('select_sensor_window');
+}
+
+=head2 update_sensor_info
+
+ Updates the info on the sensor screen 
+
+=cut
+
+sub update_sensor_info {
+    # Extract sensor info, and populate!
+    # my @sensor_info = get_sensor_info($SENSOR);
+    # sensor type info first last comment 
+    if (not defined $sensor_win->getobj('sensor')) {
+        display_sensor();
+        return if not defined $sensor_win->getobj('sensor');
+    }
+    $sensor_win->getobj('sensor')->
+            text("Sensor: " . $SE::SENSORS->{$SENSOR}->{'name'});
+    $sensor_win->getobj('type')->
+            text("Type         : " . $SE::SENSORS->{$SENSOR}->{'type'});
+    $sensor_win->getobj('info')->
+            text("Info         : " . $SE::SENSORS->{$SENSOR}->{'info'});
+    $sensor_win->getobj('first')->
+            text("First added  : " . $SE::SENSORS->{$SENSOR}->{'time_created'});
+    $sensor_win->getobj('last')->
+            text("Last edit    : " . $SE::SENSORS->{$SENSOR}->{'time_edited'});
+    $sensor_win->getobj('comment')->
+            text("Last comment : " . $SE::SENSORS->{$SENSOR}->{'comment'});
+}
+
+=head2 add_new_sensor
+
+ A window to create a sensor entery
+
+=cut
+
+sub add_new_sensor {
+    my $swin = $cui->add(
+        'add_new_sensor_window', 'Window',
+        -border => 1,
+        -ipad => 2,
+        -height => 15,
+        -width => 50,
+        -centered => 1,
+        -title => "Add new sensor",
+    );
+
+    $swin->add(
+        'sensor_name_label', 'Label',
+        -x => 0, -y => 0, -width => 8,
+        -textalignment => 'right',
+        -text => 'Name:',
+    );
+
+    my $name = $swin->add(
+        'name', 'TextEntry',
+        -x => 9, -y => 0,
+        -text => '',
+    )->focus;
+
+    $swin->add(
+        'sensor_type_label', 'Label',
+        -x => 0, -y => 1, -width => 8,
+        -textalignment => 'right',
+        -text => 'Type:',
+    );
+
+    my $popupbox = $swin->add(
+        'mypopupbox', 'Popupmenu',
+        -x => 9, -y => 1,
+        -values    => $stype_values,
+        -labels    => $stype_labels,
+    );
+
+    $swin->add(
+        'sensor_info_label', 'Label',
+        -x => 0, -y => 2, -width => 8,
+        -textalignment => 'right',
+        -text => 'Info:',
+    );
+
+    my $info = $swin->add(
+        'info', 'TextEntry',
+        -x => 9, -y => 2,
+        -text => '',
+    );
+
+    my $buttons = $swin->add(
+        'buttons', 'Buttonbox',
+        -x => 4, -y => 4,
+        -buttons => [
+            { -label => '< Add >',
+                -onpress => sub {
+                    my $this = shift;
+                    if ($name->get() eq '') {
+                        $cui->error(-message => 'You need to specify a sensor name!');
+                        return;
+                    }
+                    foreach my $s_names (keys %{$SE::SENSORS}) {
+                        if ($name->get() eq $SE::SENSORS->{$s_names}->{'name'}) {
+                            $cui->error(-message => 'The sensor name already exists!');
+                            return;
+                        }
+                    }
+                    add_sensor($name->get(), $popupbox->get(), $info->get());
+                    $this->parent->loose_focus;
+                    $cui->delete('add_new_sensor_window');
+                },
+            },
+            { -label => '< Cancel >',
+                -onpress => sub {
+                    my $this = shift;
+                    $this->parent->loose_focus;
+                    $cui->delete('add_new_sensor_window');
+                },
+            },
+        ],
+    );
+    $swin->modalfocus;
+    $cui->delete('add_new_sensor_window');
+}
+
+=head2
+
+ adds a sensor
+
+=cut
+
+sub add_sensor {
+    my ($name, $type, $info) = @_;
+    $SENSOR = get_next_sensorid();
+    $SENSOR = 1 if $SENSOR eq '';
+    if (defined $SE::SENSORS->{$SENSOR}) {
+        $cui->error(-message => 'Sorry - something went wrong!');
+        return;
+    }
+    $SE::SENSORS->{$SENSOR}->{'name'} = $name;
+    $SE::SENSORS->{$SENSOR}->{'type'} = $SF::STYPE->{$type}->{'type'};
+    $SE::SENSORS->{$SENSOR}->{'info'} = $info;
+    $SE::SENSORS->{$SENSOR}->{'time_created'} = 'Mon Mar 15 13:44:51 CET 2010';
+    $SE::SENSORS->{$SENSOR}->{'time_edited'} = 'Mon Mar 15 13:47:12 CET 2010';
+    $SE::SENSORS->{$SENSOR}->{'comment'} = 'Sensor added';
+    $SE::SENSORS->{$SENSOR}->{'groups'} = [];
+    $SE::SENSORS->{$SENSOR}->{'policies'} = {};
+    get_sensor_values();
+    get_sensor_labels();
+}
+
+
+################################################################################
+## Funtions for manipulating Policies
+
+=head2 dummy
+
+ Do nothing!
+
+=cut
+
+sub display_policy {
+    # We add the editor widget to this screen.
+    $policy_win->add('policy','Label',-text => "Policy: $POLICY",-x=>1, -y=>1, -reverse=>1, -bold=>1,-width => -1);
+
+    $policy_win->add('info','Label',-text=>"Info         : Defualt policy",-x=>1,-y=>4,-bold=>1,-width => -1);
+    $policy_win->add('first','Label',-text=>"First added  : 2010-03-16 18:33:09 CET by Edward Fjellskaal",-x=>1,-y=>5,-bold=>1,-width => -1);
+    $policy_win->add('last','Label',-text=>"Last edit    : 2010-03-16 22:14:21 CET by Edward Fjellskaal",-x=>1,-y=>6,-bold=>1,-width => -1);
+    $policy_win->add('comment','Label',-text=>"Last comment : \"Initial setup\"",-x=>1,-y=>7,-bold=>1,-width => -1);
+    $policy_win->add(undef,'Label',-text=>"Choose options to edit policy: $POLICY",-x=>1,-y=>9,-underline=>1,-width => -1);
+
+    my $policies_rules_conf = $policy_win->add(
+        undef, 'Buttonbox',
+        -y => 11,
+        -x => 2,
+        -buttons => [
+            {
+                -label => "[ Rules         ]",
+                -value => "mange rules in policy",
+                -onpress => \&search_and_add_rules,
+            }
+        ],
+    );
+}
+
+=head update_policy_info
+
+ Update status of policy window
+
+=cut
+
+sub update_policy_info {
+    # Extract sensor info, and populate!
+    # my @sensor_info = get_sensor_info($SENSOR);
+    # sensor type info first last comment 
+    $policy_win->getobj('policy')->
+            text("Policy: " . $PO::POLICIES->{$POLICY}->{'name'});
+    $policy_win->getobj('info')->
+            text("Info         : " . $PO::POLICIES->{$POLICY}->{'info'});
+    $policy_win->getobj('first')->
+            text("First added  : " . $PO::POLICIES->{$POLICY}->{'time_created'});
+    $policy_win->getobj('last')->
+            text("Last edit    : " . $PO::POLICIES->{$POLICY}->{'time_edited'});
+    $policy_win->getobj('comment')->
+            text("Last comment : " . $PO::POLICIES->{$POLICY}->{'comment'});
+}
+
+=head2 dummy
+
+ Do nothing!
+
+=cut
+
+sub select_policy {
+    my $caller = shift;
+    my $swin = $cui->add(
+        'select_policy_window', 'Window',
+        -border => 1,
+        -ipad => 2,
+        -height => 20,
+        -width => 60,
+        -centered => 1,
+        -title => "Select a Policy",
+    );
+
+    my $popupbox = $swin->add(
+        'mypopupbox', 'Popupmenu',
+        -x => 4, -y => 2,
+        -values    => $policy_values,
+        -labels    => $policy_labels,
+    );
+
+    my $buttons = $swin->add(
+        'buttons', 'Buttonbox',
+        -x => 4, -y => 5,
+        -buttons => [
+            { -label => '< Select >',
+                -onpress => sub {
+                    my $this = shift;
+                    $POLICY = $popupbox->get();
+                    $this->parent->loose_focus;
+                    update_policy_info();
+                    $policy_win->focus;
+                    $cui->delete('select_policy_window');
+                },
+            },
+            { -label => '< Cancel >',
+                -onpress => sub {
+                    my $this = shift;
+                    $this->parent->loose_focus;
+                    $cui->delete('select_policy_window');
+                },
+            },
+        ],
+    );
+
+    $popupbox->focus();
+    $swin->modalfocus;
+    $cui->delete('select_policy_window');
+}
+
+=head2 dummy
+
+ Do nothing!
+
+=cut
+
+sub configure_sensor_policies {
+    my $swin = $cui->add(
+        'csp_win', 'Window',
+        -padtop  => 3, # leave space for the menu
+        -border  => 1,
+        -ipad    => 0,
+        -height => 18,
+        -width => 40,
+        -centered => 1,
+        -title => "Configure policies for " . $SE::SENSORS->{$SENSOR}->{'name'},
+    );
+
+    sub listbox_callback {
+        my $listbox = shift;
+        my @sel = $listbox->get;
+        $SE::SENSORS->{$SENSOR}->{'policies'} = {};
+        foreach my $pol (@sel) {
+            next if not defined $pol;
+            next if $pol eq '';
+            # Edward
+            $SE::SENSORS->{$SENSOR}->{'policies'}->{$pol - 1} = $policy_labels->{"$pol"};
+        }
+    }
+
+    $swin->add(
+        undef, 'Listbox',
+        -y          => 1,
+        -padbottom  => 3,
+        -x          => 1,
+        -values     => $policy_values,
+        -labels     => $policy_labels,
+        -selected   => $SE::SENSORS->{$SENSOR}->{'policies'},
+        -width      => 36,
+        -border     => 1,
+        -multi      => 1,
+        -title      => 'Enable Policies',
+        -vscrollbar => 1,
+        -onchange   => \&listbox_callback,
+    )->focus;
+
+    my $buttons = $swin->add(
+        'buttons', 'Buttonbox',
+        -x => 14, -y => 11,
+        -buttons => [
+            { -label => '< Back >',
+                -onpress => sub {
+                    my $this = shift;
+                    #update_sensor_config($SENSOR);
+                    $this->parent->loose_focus;
+                    $sensor_win->focus;
+                    $cui->delete('csp_win');
+                },
+            },
+            #{ -label => '< Cancel >',
+            #    -onpress => sub {
+            #        my $this = shift;
+            #        $this->parent->loose_focus;
+            #        $sensor_win->focus;
+            #        $cui->delete('csp_win');
+            #    },
+            #},
+        ],
+    );
+    
+    $swin->modalfocus;
+    $cui->delete('csp_win');
+}
+
+################################################################################
+## Funtions for manipulating Policies
+
+=head2 add_new_policy
+
+ A window to create a policy entery
+
+=cut
+
+sub add_new_policy {
+    my $swin = $cui->add(
+        'add_new_policy_window', 'Window',
+        -border => 1,
+        -ipad => 2,
+        -height => 15,
+        -width => 50,
+        -centered => 1,
+        -title => "Add new policy",
+    );
+
+    $swin->add(
+        'policy_name_label', 'Label',
+        -x => 0, -y => 0, -width => 8,
+        -textalignment => 'right',
+        -text => 'Name:',
+    );
+
+    my $name = $swin->add(
+        'name', 'TextEntry',
+        -x => 9, -y => 0,
+        -text => '',
+    )->focus;
+
+    #$swin->add(
+    #    'policy_type_label', 'Label',
+    #    -x => 0, -y => 1, -width => 8,
+    #    -textalignment => 'right',
+    #    -text => 'Type:',
+    #);
+
+    # Type here can be drop, alert, .... ?
+    #my $popupbox = $swin->add(
+    #    'mypopupbox', 'Popupmenu',
+    #    -x => 9, -y => 1,
+    #    -values    => $stype_values,
+    #    -labels    => $stype_labels,
+    #);
+
+    $swin->add(
+        'policy_info_label', 'Label',
+        -x => 0, -y => 2, -width => 8,
+        -textalignment => 'right',
+        -text => 'Info:',
+    );
+
+    my $info = $swin->add(
+        'info', 'TextEntry',
+        -x => 9, -y => 2,
+        -text => '',
+    );
+
+    my $buttons = $swin->add(
+        'buttons', 'Buttonbox',
+        -x => 4, -y => 4,
+        -buttons => [
+            { -label => '< Add >',
+                -onpress => sub {
+                    my $this = shift;
+                    #add_policy($name->get(), $popupbox->get(), $info->get());
+                    add_policy($name->get(), "", $info->get());
+                    $this->parent->loose_focus;
+                    $cui->delete('add_new_policy_window');
+                },
+            },
+            { -label => '< Cancel >',
+                -onpress => sub {
+                    my $this = shift;
+                    $this->parent->loose_focus;
+                    $cui->delete('add_new_policy_window');
+                },
+            },
+        ],
+    );
+    $swin->modalfocus;
+    $cui->delete('add_new_policy_window');
+}
+
+=head2
+
+ adds a policy
+
+=cut
+
+sub add_policy {
+    my ($name, $type, $info) = @_;
+    my $pid = get_next_policyid();
+    $PO::POLICIES->{$pid}->{'name'} = $name;
+    #$PO::POLICIES->{$pid}->{'type'} = $SF::STYPE->{$type}->{'type'};
+    $PO::POLICIES->{$pid}->{'info'} = $info;
+    $PO::POLICIES->{$pid}->{'time_created'} = 'Mon Mar 15 13:44:51 CET 2010';
+    $PO::POLICIES->{$pid}->{'time_edited'} = 'Mon Mar 15 13:47:12 CET 2010';
+    $PO::POLICIES->{$pid}->{'comment'} = 'Policy added';
+    $PO::POLICIES->{$pid}->{'rules'} = {};
+    $PO::POLICIES->{$pid}->{'sensors'} = [];
+    get_policy_values();
+    get_policy_labels();
+}
+
+=head2 search_rules
+
+ View a rule based on its search
+
+=cut
+
+sub search_and_add_rules {
+    my $swin = $cui->add(
+        'search_rule', 'Window',
+        -border => 1,
+        -ipad => 2,
+        -height => -1, #20
+        -width => -1,  #78
+        #-centered => 1,
+        -title => "Manage policy: [" . $PO::POLICIES->{$POLICY}->{'name'} . "]",
+    );
+
+    $swin->add('search_field','Label',
+        -text => "Search in field:"
+        ,-x=>1, -y=>0,-bold=>1,-width => -1);
+
+    # pop up bx with: msg, sid, catagory, class etc
+    my $popupbox = $swin->add(
+        'mypopupbox', 'Popupmenu',
+        -x => 18, -y => 0,
+        -values    => $search_values,
+        -labels    => $search_labels,
+        -onchange  => sub {
+            my $parent = shift;
+            my $predef= $parent->parent->getobj('predef_search');
+            my $val = $parent->get;
+            
+            my $lab = $parent->{-labels}->{$val};
+            if ($PO::SEARCH->{$val}->{'search'} =~ /classtype|metadata/) {
+                $predef->text("Predefined " . $PO::SEARCH->{$val}->{'search'} . ":");
+                $swin->delete('mypopupbox1') if ($parent->parent->getobj('mypopupbox1'));
+                $swin->add(
+                    'mypopupbox1', 'Popupmenu',
+                    -x => 22, -y => 1,
+                    -values    => $PO::SEARCH->{$val}->{'predef'}->{'values'},
+                    -labels    => $PO::SEARCH->{$val}->{'predef'}->{'labels'},
+                    -onchange  => sub {
+                        my $parent2 = shift;
+                        my $val = $parent2->get;
+                        if ($val == 0 ) {
+                            create_search_field($swin);
+                            $parent->parent->getobj('search_string')->focus;
+                        } else {
+                            $swin->delete('search_text') if ($parent->parent->getobj('search_text'));
+                            $swin->delete('search_string') if ($parent->parent->getobj('search_string'));
+                        }
+                    }
+                )->focus;
+            } else {
+                $predef->text("");
+                $swin->delete('mypopupbox1') if ($parent->parent->getobj('mypopupbox1'));
+                create_search_field($swin);
+                # send focus to search text box
+                #$parent->parent->getobj('search_string')->focus;
+            }
+            #$publb->draw;
+        },
+    );
+
+    $swin->add('predef_search','Label',
+    -text => ""
+    ,-x=>1, -y=>1,-bold=>1,-width => -1);
+
+    sub create_search_field {
+        my $twin = shift;
+        $twin->delete('search_text') if ($twin->getobj('search_text'));
+        $twin->delete('search_string') if ($twin->getobj('search_string'));
+
+        $twin->add('search_text','Label',
+        -text => "Enter search:"
+        ,-x=>1, -y=>3,-bold=>1,-width => -1);
+    
+        $twin->add(
+        'search_string', 'TextEntry', -sbborder => 1,
+        -x => 15,-y => 3,-width => 20, -reverse => 1);
+    }
+    create_search_field($swin);
+
+    my $buttons = $swin->add(
+        'buttons', 'Buttonbox',
+        -x => 22, -y => 5,
+        -buttons => [
+            { -label => '< Search >',
+                -onpress => sub {
+                    my $this = shift;
+                    my ($tag, $search) = ("msg",".*");
+                    if (defined $swin->getobj('search_string')) {
+                        my $search_obj = $swin->getobj('search_string');
+                        $search = $search_obj->get();
+                    }
+                    warn $popupbox->get() if defined $popupbox->get();
+                    if (defined $PO::SEARCH->{$popupbox->get()}->{'search'}
+                        && not $PO::SEARCH->{$popupbox->get()}->{'search'} =~ /msg|sid/ ) {
+                        my $predefs = $swin->getobj('mypopupbox1');
+                        warn $PO::SEARCH->{$popupbox->get()}->{'search'};
+                        $tag = $PO::SEARCH->{$popupbox->get()}->{'search'};
+                        warn $PO::SEARCH->{$popupbox->get()}->{'predef'}->{'labels'}->{$predefs->get()};
+                        $search = $PO::SEARCH->{$popupbox->get()}->{'predef'}->{'labels'}->{$predefs->get()};
+                    }
+                    search_and_populate_values_and_labels($tag, $search);
+                    create_search_results($swin);
+                    $swin->getobj('rule_lb')->focus;
+                },
+            },
+            { -label => '< Back >',
+                -onpress => sub {
+                    my $this = shift;
+                    $this->parent->loose_focus;
+                    $policy_win->focus;
+                    $cui->delete('search_rule');
+                },
+            },
+        ],
+    );
+
+    sub listbox1_callback {
+        my $h = shift;
+        my @sel = $h->get();
+        foreach my $moo (sort grep{defined}(@sel)) {
+            next if $moo eq '';
+            if ($MRULEDB->{$moo}->{'message'}) {
+                # for all the rules in $rules_labels, disable all, then enable $moo's
+                $PO::POLICIES->{$POLICY}->{'rules'}->{$moo} = $MRULEDB->{$moo}->{'message'};
+                warn $moo ." ".$MRULEDB->{$moo}->{'message'};
+            }
+        }
+    }
+    
+    sub create_search_results {
+        my $twin = shift;
+        $twin->delete('rule_lb') if ($twin->getobj('rule_lb'));
+        #my $selected = {};
+        $rules_labels_tmp = {};
+        foreach my $enabled (sort { $b <=> $a } (keys %{$PO::POLICIES->{$POLICY}->{'rules'}})) {
+            if ( defined $rules_labels->{$enabled}) {
+                warn $enabled ." ". $rules_labels->{$enabled};
+                $rules_labels_tmp->{$enabled} = $MRULEDB->{$enabled}->{'message'};
+            }
+        }
+
+        $twin->add(
+            'rule_lb', 'Listbox',
+            -y          => 7,
+            -padbottom  => 1,
+            -x          => 1,
+            -values     => $rules_values,
+            -labels     => $rules_labels,
+            -max_selected => 22222,
+            -width      => -1,
+            -border     => 1,
+            -multi      => 1,
+            -title      => 'Search results',
+            -vscrollbar => 1,
+            -selected   => $rules_labels_tmp,
+            -onchange   => \&listbox1_callback,
+        );
+    }
+    search_and_populate_values_and_labels("msg",".*");
+    create_search_results($swin);
+
+    $swin->modalfocus;
+    $cui->delete('search_rule');
+}
+
+sub about_dialog {
+#### -selected   => $PO::POLICIES->{$POLICY}->{'rules'},####
+   $cui->dialog(
+      -title => 'About Cerdo',
+      -message => "Program : Cerdo\n"
+           . "Author  : Edward Fjellskaal\n\n"
+           . "This is a Text User Interface (TUI) for managing\n"
+           . "Sourcefire VRT and Emerging Threats signatures\n"
+           . "for your IPS/IDS sensors!\n",
+   );
+}
+
+
+sub search_and_populate_values_and_labels {
+    my ($field, $regexp) = @_;
+    $field = "msg" if not defined $field;
+    $regexp = ".*" if not defined $regexp;
+    $rules_values = [];
+    $rules_labels = {};
+    warn $field . " " . $regexp;
+    foreach my $sid (sort { $b <=> $a } (keys (%$MRULEDB))) {
+        next if not defined $sid;
+        next if $sid eq '';
+        if ( $field =~ /classtype/ ) {
+            if ($MRULEDB->{$sid}->{'options'} =~ /classtype:.*$regexp.*;/) {
+                push (@$rules_values, $sid);
+                $rules_labels->{$sid} = $MRULEDB->{$sid}->{'message'};
+            }
+        } elsif ($field =~ /metadata/) {
+            if ($MRULEDB->{$sid}->{'options'} =~ /metadata:.*$regexp.*;/) {
+                push (@$rules_values, $sid);
+                $rules_labels->{$sid} = $MRULEDB->{$sid}->{'message'};
+            }
+        } elsif ($field =~ /sid/) {
+            if ($MRULEDB->{$sid}->{'options'} =~ /sid:.*$regexp.*;/) {
+                push (@$rules_values, $sid);
+                $rules_labels->{$sid} = $MRULEDB->{$sid}->{'message'};
+            }
+        } else { # msg:
+            if ($MRULEDB->{$sid}->{'message'} =~ /.*$regexp.*/) {
+                push (@$rules_values, $sid);
+                $rules_labels->{$sid} = $MRULEDB->{$sid}->{'message'};
+            }
+        }
+    }
+    #update_search_selected();
+}
+
+
+### Other dialogs
+sub exit_dialog()
+{
+   my $return = $cui->dialog(
+         -title     => "Quit?",
+         -buttons   => ['yes', 'no'],
+         -message => "Do you really want to quit?"
+   );
+
+   exit(0) if $return;
+}
+
+sub read_config {
+    my $file = shift;
+    my $config;
+
+    open(CONFIG,$file);
+    while (my $line = <CONFIG>) {
+        chomp($line);
+        $line =~ s/\#.*//;
+        next if undef $line;
+        my ($key, $value) = ($line =~ m/(\w+)\s*=\s*(.*)$/);
+        $config->{$key} = $value;
+        # print "$key: $value\n";
+    }
+    return $config;
+}
+
+# find_configs ($file, $config) - returns @paths
+sub find_configs {
+    my $file = shift;
+    my $rcconfig = shift;
+    my @paths;
+    my $workdir = "";
+    my @path = split (/\//, $file);
+    foreach my $dir (@path) {
+      $workdir = "$workdir/$dir";
+      my $configfile = "/" . $workdir . "/$rcconfig";
+      $configfile =~ s/^\/\/\//\//;
+      if (-e "$configfile")
+      {
+         push(@paths, $configfile);
+      }
+#      print Dumper \@paths;
+    }
+    return @paths;
+}
+
+=head2 parse_all_rule_files
+
+ Opens all the rule files, parses them, and stors rules in a hash
+
+=cut
+
+sub parse_all_rule_files {
+    my @FILES;
+    # Open the directory
+    if( opendir( DIR, $RULESDIR ) ) {
+       # Find rule files in dir (*.rules)
+       while( my $FILE = readdir( DIR ) ) {
+          next if( ( "." eq $FILE ) || ( ".." eq $FILE ) );
+          next unless ($FILE =~ /.*\.rules$/);
+          push( @FILES, $FILE ) if( -f "$RULESDIR$FILE" );
+       }
+       closedir( DIR );
+    } else {
+        warn "[!] Error opening dir: $RULESDIR";
+        exit 1;
+    }
+    foreach my $FILE ( @FILES ) {
+       my $result = get_rules ("$RULESDIR$FILE");
+       if ($result == 1) {
+          warn "[*] Couldn't parse $RULESDIR$FILE: $!\n";
+       }
+    }
+}
+
+=head2 get_rules
+
+ This sub extracts the rules from a rules file.
+ Takes $file as input parameter.
+
+=cut
+
+sub get_rules {
+    my $RFILE = shift;
+    my $result = 0;
+    #my %signatures;
+    if (open (FILE, $RFILE)) {
+        print "Found rules file: ".$RFILE."\n" if $DEBUG;
+        # Verify the data in the session files
+        LINE:
+        while (my $rule = readline FILE) {
+            chomp $rule;
+            #$rule =~ s/\#.*//;
+            next LINE unless($rule); # empty line
+
+            $rule =~ /^\#? ?(drop|alert|log|pass|activate|dynamic)\s+(\S+?)\s+(\S+?)\s+(\S+?)\s+(\S+?)\s+(\S+?)\s+(\S+?)\s+\((.*)\)$/;
+            my ($action, $proto, $sip, $sport, $dir, $dip, $dport, $options) = ($1, $2, $3, $4, $5, $6, $7, $8);
+            unless($rule) {
+                warn "[*] Error: Not a valid rule in: '$RFILE'" if $DEBUG;
+                warn "[*] RULE: $rule" if $DEBUG;
+                next LINE;
+            }
+            
+            if (not defined $options) {
+                warn "[*] Error: Options missing in rule: '$RFILE'" if $DEBUG;
+                warn "[*] RULE: $rule" if $DEBUG;
+                next LINE;
+            }
+
+            # ET rules has: "sid: 2003451;"
+            unless( $options =~ /sid:\s*([0-9]+)\s*;/ ) {
+                warn "[*] Error: No sid found in rule options: '$RFILE'" if $DEBUG;
+                warn "[*] RULE: $options" if $DEBUG;
+                next LINE;
+            }
+            my $sid = $1;
+
+            $options =~ /msg:\s*\"(.*?)\"\s*;/;
+            my $msg = $1;
+
+            $options =~ /rev:\s*(\d+?)\s*;/;
+            my $rev = $1;
+
+            my $enabled = 0;
+            if ( $rule =~ /^#/ ) {
+               $enabled = 0;
+            } else {
+                $enabled = 1;
+            }
+            # Things should be "OK" now to send to the hash-DB
+            #push (@{$RULEDB{$sid}}, [ $rule ]);
+            $MRULEDB->{$sid}->{'rule'}      = $rule;
+            $MRULEDB->{$sid}->{'enabled'}   = $enabled;
+            $MRULEDB->{$sid}->{'action'}    = $action;
+            $MRULEDB->{$sid}->{'protocol'}  = $proto;
+            $MRULEDB->{$sid}->{'src_ip'}    = $sip;
+            $MRULEDB->{$sid}->{'src_port'}  = $sport;
+            $MRULEDB->{$sid}->{'direction'} = $dir;
+            $MRULEDB->{$sid}->{'dst_ip'}    = $dip;
+            $MRULEDB->{$sid}->{'dst_port'}  = $dport;
+            $MRULEDB->{$sid}->{'message'}   = $msg;
+            $MRULEDB->{$sid}->{'options'}   = $options;
+
+#            warn "parsed sid:$sid - $options";
+        }
+      close FILE;
+    }
+    return $result;
+}
+
+=head2 write_new_rulefile
+
+ Dumpes the rules hash into a file
+ input might be filename ?
+
+=cut
+
+sub write_new_rulefile {
+    warn "ERRRRR";
+    for(keys %$MRULEDB){
+        warn $MRULEDB->{$_}->{'rule'} . "\n";
+    }
+}
+#write_new_rulefile();
+# ----------------------------------------------------------------------
+# The main loop of the program
+# ----------------------------------------------------------------------
+
+$cui->set_binding(\&exit_dialog, "\cC");
+$cui->set_binding(\&select_sensor, "\cS");
+$cui->set_binding(\&select_policy, "\cP");
+$cui->set_binding(sub {shift()->getobj('menu')->focus}, "\cX", KEY_F(10));
+$cui->set_binding(sub {
+   my $cui = shift;
+   $cui->layout;
+   $cui->draw;
+}, "\cL");
+
+
+# Bring the focus to the sensor widget.
+display_policy();
+display_sensor();
+$sensor_win->focus;
+
+$cui->mainloop;
+
