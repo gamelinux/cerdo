@@ -98,15 +98,15 @@ our $search_labels = {};
 
 sub get_search_values {
     $search_values = [];
-    foreach my $nr (sort (keys (%$PO::SEARCH))) {
+    foreach my $nr (sort (keys (%$SF::SEARCH))) {
         push (@$search_values, $nr);
     }
 }
 
 sub get_search_labels {
     $search_labels = {};
-    foreach my $nr (sort (keys (%$PO::SEARCH))) {
-        $search_labels->{$nr} = $PO::SEARCH->{$nr}->{'search'};
+    foreach my $nr (sort (keys (%$SF::SEARCH))) {
+        $search_labels->{$nr} = $SF::SEARCH->{$nr}->{'search'};
     }
 }
 
@@ -175,22 +175,26 @@ sub get_policy_labels {
 parse_all_rule_files();
 our $rules_cnt = scalar(keys(%$MRULEDB));
 our $rules_values = [];
+our $rules_labels = {};
+
 sub get_rules_values {
     $rules_values = [];
     foreach my $nr (sort { $b <=> $a } (keys (%$MRULEDB))) {
         push (@$rules_values, $nr);
+        $rules_labels->{$nr} = $MRULEDB->{$nr}->{'message'};
     }
 }
 get_rules_values();
 
-our $rules_labels = {};
-our $rules_labels_tmp = {};
+#our $rules_labels = {};
+our %rules_labels_tmp = ();
 
 sub get_rules_labels {
+    return;
     $rules_labels = {};
     foreach my $nr (sort { $b <=> $a } (keys (%$MRULEDB))) {
         $rules_labels->{$nr} = $MRULEDB->{$nr}->{'message'};
-        $rules_labels_tmp->{$nr} = $MRULEDB->{$nr}->{'message'};
+        #$rules_labels_tmp->{$nr} = $MRULEDB->{$nr}->{'message'};
     }
 }
 get_rules_labels();
@@ -956,14 +960,14 @@ sub search_and_add_rules {
             my $val = $parent->get;
             
             my $lab = $parent->{-labels}->{$val};
-            if ($PO::SEARCH->{$val}->{'search'} =~ /classtype|metadata/) {
-                $predef->text("Predefined " . $PO::SEARCH->{$val}->{'search'} . ":");
+            if ($SF::SEARCH->{$val}->{'search'} =~ /classtype|metadata/) {
+                $predef->text("Predefined " . $SF::SEARCH->{$val}->{'search'} . ":");
                 $swin->delete('mypopupbox1') if ($parent->parent->getobj('mypopupbox1'));
                 $swin->add(
                     'mypopupbox1', 'Popupmenu',
                     -x => 22, -y => 1,
-                    -values    => $PO::SEARCH->{$val}->{'predef'}->{'values'},
-                    -labels    => $PO::SEARCH->{$val}->{'predef'}->{'labels'},
+                    -values    => $SF::SEARCH->{$val}->{'predef'}->{'values'},
+                    -labels    => $SF::SEARCH->{$val}->{'predef'}->{'labels'},
                     -onchange  => sub {
                         my $parent2 = shift;
                         my $val = $parent2->get;
@@ -1060,19 +1064,23 @@ sub search_and_add_rules {
         my $twin = shift;
         $twin->delete('rule_lb') if ($twin->getobj('rule_lb'));
         #my $selected = {};
-        $rules_labels_tmp = {};
+        %rules_labels_tmp = ();
         foreach my $enabled (sort { $b <=> $a } (keys %{$PO::POLICIES->{$POLICY}->{'rules'}})) {
             if ( defined $rules_labels->{$enabled}) {
                 warn $enabled ." ". $rules_labels->{$enabled};
-                $rules_labels_tmp->{$enabled} = $MRULEDB->{$enabled}->{'message'};
+                $rules_labels_tmp{$enabled} = $MRULEDB->{$enabled}->{'message'};
             }
         }
+warn Data::Dumper::Dumper $rules_values;
+warn Data::Dumper::Dumper \%rules_labels_tmp;
+warn Data::Dumper::Dumper $rules_labels;
 
         $twin->add(
             'rule_lb', 'Listbox',
             -y          => 7,
             -padbottom  => 1,
             -x          => 1,
+            -selected   => \%rules_labels_tmp,
             -values     => $rules_values,
             -labels     => $rules_labels,
             -max_selected => 22222,
@@ -1081,7 +1089,6 @@ sub search_and_add_rules {
             -multi      => 1,
             -title      => 'Search results',
             -vscrollbar => 1,
-            -selected   => $rules_labels_tmp,
             -onchange   => \&listbox1_callback,
         );
     }
