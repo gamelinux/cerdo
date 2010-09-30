@@ -6,14 +6,20 @@
 
 # You need curses and curses::ui for perl
 
-mkdir -p /var/lib/cerdo/rules
-mkdir -p /var/lib/cerdo/logs
-mkdir -p /var/lib/cerdo/state
+$ sudo aptitude install libcurses-perl libcurses-ui-perl
+
+$ sudo mkdir -p /var/lib/cerdo/rules
+$ sudo mkdir -p /var/lib/cerdo/logs
+$ sudo mkdir -p /var/lib/cerdo/state
+
+$ sudo chown -R changeme.changeme /var/lib/cerdo/
+
+$ cp -a lib/* /var/lib/cerdo/state/
 
 # Place your VRT or ET rules in /var/lib/cerdo/rules
 # /var/lib/cerdo/logs is for:
 # error logs, user logging, rule updates,
 # adding and deleting stuff ++
 
-
+$ ./cerdo
 
