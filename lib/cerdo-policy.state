@@ -1,0 +1,38 @@
+# data file for cerdo -*- Mode: perl -*-
+# written Thu Sep 30 15:22:12 2010
+
+package PO;
+
+use utf8;
+
+$POLICIES = {
+  '1' => {
+    'comment' => 'Policy added',
+    'info' => 'SF VRT Security over Connectivity',
+    'name' => 'Security Over Connectivity',
+    'rules' => {},
+    'sensors' => [],
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '2' => {
+    'comment' => 'Policy added',
+    'info' => 'SF VRT Connectivity over Security',
+    'name' => 'Connectivity Over Security',
+    'rules' => {},
+    'sensors' => [],
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '3' => {
+    'comment' => 'Policy added',
+    'info' => 'SF VRT Ballanced Security and Connectivity',
+    'name' => 'Ballanced Security And Connectivity',
+    'rules' => {},
+    'sensors' => [],
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  }
+};
+
+__PACKAGE__;

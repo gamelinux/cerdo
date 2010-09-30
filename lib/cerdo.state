@@ -1,0 +1,53 @@
+# data file for cerdo -*- Mode: perl -*-
+# written Thu Sep 30 15:22:12 2010
+
+package SF;
+
+use utf8;
+
+# $SF::STYPE->{$type}->{'type'};
+
+$STYPE = {
+  '1' => {
+    'comment' => 'Sensor added',
+    'info' => 'Snort version 2.8.4.*',
+    'type' => 'Snort-2.8.4',
+    'sensors' => [],
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '2' => {
+    'comment' => 'Sensor added',
+    'info' => 'Snort version 2.8.5.*',
+    'type' => 'Snort-2.8.5',
+    'sensors' => [],
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '3' => {
+    'comment' => 'Sensor added',
+    'info' => 'Snort version 2.8.6.*',
+    'type' => 'Snort-2.8.6',
+    'sensors' => [],
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '4' => {
+    'comment' => 'Sensor added',
+    'info' => 'Suricata version 1.0.*',
+    'type' => 'Suricata-1.0',
+    'sensors' => [],
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '5' => {
+    'comment' => 'Sensor added',
+    'info' => 'Snort version 2.9.0.*',
+    'type' => 'Snort-2.9.0',
+    'sensors' => [],
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  }
+};
+
+__PACKAGE__;

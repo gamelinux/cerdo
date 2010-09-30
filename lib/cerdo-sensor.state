@@ -1,0 +1,23 @@
+# data file for cerdo -*- Mode: perl -*-
+# written Thu Sep 30 15:22:12 2010
+
+package SE;
+
+use utf8;
+
+$SENSORS = {
+  '1' => {
+    'comment' => 'Sensor added',
+    'groups' => [],
+    'info' => 'External IDS sensor 1',
+    'name' => 'Ext_IDS_1',
+    'policies' => {
+                    '0' => 'Security Over Connectivity'
+                  },
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010',
+    'type' => 'Snort-2.8.6'
+  }
+};
+
+__PACKAGE__;
