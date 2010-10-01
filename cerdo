@@ -345,7 +345,15 @@ open (STDERR, ">> $LOGFILE") or die "[!] Error opening $LOGFILE : $!\n";
 =cut
 
 sub dummy {
-    return;
+   $cui->dialog(
+      -title => 'Not yet implemented!',
+      -message => "This function is not yet implemented!\n"
+                . "We are very sorry!\n\n"
+                . "If you have any thoughts or issues,\n"
+                . "please report them here:\n"
+                . "http://github.com/gamelinux/Cerdo/issues\n",
+   );
+   return;
 }
 
 ################################################################################
@@ -397,7 +405,8 @@ sub display_sensor {
             {
                 -label => "[ Preprocessors ]",
                 -value => "configure preprocessors",
-                -onpress => \&configure_sensor_preprocessors,
+                #-onpress => \&configure_sensor_preprocessors,
+                -onpress => \&dummy,
             }
         ],
     );
