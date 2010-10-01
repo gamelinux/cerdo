@@ -1022,15 +1022,20 @@ sub search_and_add_rules {
                         my $search_obj = $swin->getobj('search_string');
                         $search = $search_obj->get();
                     }
+
                     warn $popupbox->get() if defined $popupbox->get();
-                    if (defined $PO::SEARCH->{$popupbox->get()}->{'search'}
-                        && not $PO::SEARCH->{$popupbox->get()}->{'search'} =~ /msg|sid/ ) {
+                    warn $SF::SEARCH->{$popupbox->get()}->{'search'};
+
+                    if (defined $SF::SEARCH->{$popupbox->get()}->{'search'}
+                        && not $SF::SEARCH->{$popupbox->get()}->{'search'} =~ /msg|sid/ ) {
                         my $predefs = $swin->getobj('mypopupbox1');
-                        warn $PO::SEARCH->{$popupbox->get()}->{'search'};
-                        $tag = $PO::SEARCH->{$popupbox->get()}->{'search'};
-                        warn $PO::SEARCH->{$popupbox->get()}->{'predef'}->{'labels'}->{$predefs->get()};
-                        $search = $PO::SEARCH->{$popupbox->get()}->{'predef'}->{'labels'}->{$predefs->get()};
+                        warn $SF::SEARCH->{$popupbox->get()}->{'search'};
+                        $tag = $SF::SEARCH->{$popupbox->get()}->{'search'};
+                        warn $SF::SEARCH->{$popupbox->get()}->{'predef'}->{'labels'}->{$predefs->get()};
+                        $search = $SF::SEARCH->{$popupbox->get()}->{'predef'}->{'labels'}->{$predefs->get()};
+                        warn "I got here!!!";
                     }
+                    #search_and_populate_values_and_labels("classtype","locala");
                     search_and_populate_values_and_labels($tag, $search);
                     create_search_results($swin);
                     $swin->getobj('rule_lb')->focus;
