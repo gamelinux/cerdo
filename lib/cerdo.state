@@ -50,4 +50,75 @@ $STYPE = {
   }
 };
 
+$SEARCH = {
+  '1' => {
+    'comment' => 'Search added',
+    'info' => 'Search in classtype field',
+    'search' => 'classtype',
+    'predef' => {
+                    'labels' => {
+                                  '1' => 'policy-violation',
+                                  '2' => 'attempted-user',
+                                  '3' => 'attempted-admin',
+                                  '4' => 'attempted-dos',
+                                  '5' => 'misc-attack',
+                                  '6' => 'web-application-attack',
+                                  '7' => 'attempted-recon'
+                                },
+                    'values' => [ 
+                                  '1', 
+                                  '2',
+                                  '3',
+                                  '4',
+                                  '5',
+                                  '6',
+                                  '7'
+                                ]
+                 },
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '2' => {
+    'comment' => 'Search added',
+    'info' => 'Search ing metadata field',
+    'search' => 'metadata',
+    'predef' => {
+                    'labels' => {
+                                '1' => 'policy connectivity-ips drop',
+                                '2' => 'policy balanced-ips drop',
+                                '3' => 'policy security-ips drop'
+                                },
+                    'values' => [
+                                '1',
+                                '2',
+                                '3'
+                                ]
+                 },
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '3' => {
+    'comment' => 'Search added',
+    'info' => 'Search in msg field',
+    'search' => 'msg',
+    'predef' => {
+                    'labels' => {},
+                    'values' => []
+                 },
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  },
+  '4' => {
+    'comment' => 'Search added',
+    'info' => 'Search by sid',
+    'search' => 'sid',
+    'predef' => {
+                    'labels' => {},
+                    'values' => []
+                 },
+    'time_created' => 'Mon Mar 15 13:44:51 CET 2010',
+    'time_edited' => 'Mon Mar 15 13:47:12 CET 2010'
+  }
+};
+
 __PACKAGE__;
