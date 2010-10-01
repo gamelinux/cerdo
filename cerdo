@@ -1044,7 +1044,6 @@ sub search_and_add_rules {
                         $search = $SF::SEARCH->{$popupbox->get()}->{'predef'}->{'labels'}->{$predefs->get()};
                         warn "I got here!!!";
                     }
-                    #search_and_populate_values_and_labels("classtype","locala");
                     search_and_populate_values_and_labels($tag, $search);
                     create_search_results($swin);
                     $swin->getobj('rule_lb')->focus;
@@ -1063,12 +1062,12 @@ sub search_and_add_rules {
 
     sub listbox1_callback {
         my $h = shift;
-        my @sel = $h->get();
-        warn "Get selected: " . Data::Dumper::Dumper \@sel; 
+        my @sel = $h->get;
+        warn "Callback get() selected: " . Data::Dumper::Dumper \@sel; 
         foreach my $moo (sort grep{defined}(@sel)) {
             next if $moo eq '';
+            warn "Callback enable rules in policy: " . Data::Dumper::Dumper $moo;
             if ($MRULEDB->{$moo}->{'message'}) {
-                # for all the rules in $rules_labels, disable all, then enable $moo's
                 $PO::POLICIES->{$POLICY}->{'rules'}->{$moo} = $MRULEDB->{$moo}->{'message'};
                 warn $moo ." ".$MRULEDB->{$moo}->{'message'};
             }
@@ -1076,23 +1075,24 @@ sub search_and_add_rules {
     }
     
     sub create_search_results {
+    # This sub should be renamed to something like : create_enabled_refhash
+    # This sub is runned after searches, so result of searches is in $rules_labels
         my $twin = shift;
         $twin->delete('rule_lb') if ($twin->getobj('rule_lb'));
-        #my $selected = {};
         my $counter = 0;
         %rules_labels_tmp = ();
-        foreach my $enabled (sort { $b <=> $a } (keys %{$PO::POLICIES->{$POLICY}->{'rules'}})) {
-            if ( defined $rules_labels->{$enabled}) {
-               # $enabled == sid, $rules_labels->{$enabled} == msg
-                warn "This:" . $enabled ." ". $rules_labels->{$enabled};
-                #$rules_labels_tmp{$enabled} = $MRULEDB->{$enabled}->{'message'};
-                $rules_labels_tmp{$counter} = $enabled;
+        # For each rule in search result, find out index of who is enabled!
+        # Search result is stored in $rules_labels
+        foreach my $rule (sort { $b <=> $a } (keys (%$rules_labels))) {
+            if ( defined $PO::POLICIES->{$POLICY}->{'rules'}->{$rule}) {
+                warn "This:" . $rule ." ". $rules_labels->{$rule};
+                $rules_labels_tmp{$counter} = $rule;
             }
             $counter ++;
         }
-warn Data::Dumper::Dumper $rules_values;
-warn Data::Dumper::Dumper \%rules_labels_tmp;
-warn Data::Dumper::Dumper $rules_labels;
+        warn "Rule Values :". Data::Dumper::Dumper $rules_values;
+        warn "Rule Enabled:". Data::Dumper::Dumper \%rules_labels_tmp;
+        warn "Rule Labels :". Data::Dumper::Dumper $rules_labels;
 
         $twin->add(
             'rule_lb', 'Listbox',
@@ -1119,7 +1119,6 @@ warn Data::Dumper::Dumper $rules_labels;
 }
 
 sub about_dialog {
-#### -selected   => $PO::POLICIES->{$POLICY}->{'rules'},####
    $cui->dialog(
       -title => 'About Cerdo',
       -message => "Program : Cerdo\n"
@@ -1163,7 +1162,6 @@ sub search_and_populate_values_and_labels {
             }
         }
     }
-    #update_search_selected();
 }
 
 
