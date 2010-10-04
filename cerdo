@@ -1174,7 +1174,52 @@ sub exit_dialog()
          -message => "Do you really want to quit?"
    );
 
-   exit(0) if $return;
+   if ( $return ) {
+      # write new snort.conf / rulefiles to disk
+      # write_sensor_rules (); # not 100% done yet...
+      exit(0);
+   }
+}
+
+### # write new snort.conf / rulefiles to disk
+sub write_sensor_rules () {
+   #my $sensor = shift;
+   # For all sensors in $SE::SENSORS,
+   # and for all policies $PO::POLICIES that has the sensor assosiatted
+   # with it, Write the rules to on $Variable that is then printed to disk.
+   #
+   # write enabled rules to $cerdo_dir/sensors/$sensor/rules/cerdo.rules
+   # but if "$splitrules == 1" then writen the rules like :
+   #  $cerdo_dir/sensors/$sensor/rules/<classtype>.rules
+
+   my $sensor_rules = {};
+  
+   # simple implementation first...
+   # for each sensor
+   foreach my $sensor (sort { $b <=> $a } (keys (%$SE::SENSORS))) {
+      # and for each policy attached to the sensor
+      my $tmp_policies = $SE::SENSORS->{$sensor}->{'policies'};
+      #foreach my $sensor_policy (sort { $b <=> $a } (keys ($SE::SENSORS->{$sensor}->{'policies'}))) {
+      foreach my $sensor_policy (sort { $b <=> $a } (keys (%$tmp_policies))) {
+         # check if rule in policy exists in $MRULEDB
+         #if ( $PO::POLICIES->{$sensor_policy}->{'rules'}->{}
+         my $tmp_rules = $PO::POLICIES->{$sensor_policy}->{'rules'};
+         #foreach my $rule (sort { $b <=> $a } (keys ($PO::POLICIES->{$sensor_policy}->{'rules'}))) {
+         foreach my $rule (sort { $b <=> $a } (keys (%$tmp_rules))) {
+            # if rules is defined, add it to $sensor_rules
+            if ( defined $PO::POLICIES->{$sensor_policy}->{'rules'}->{$rule} && defined  $MRULEDB->{$rule} ) {
+               warn "[*] ADDING RULE: ". $MRULEDB->{$rule}->{'rule'};
+               $sensor_rules->{$rule} = $MRULEDB->{$rule}->{'rule'};
+            }
+         }
+      }
+      # Write $sensor_rules to disk (split them up if defined)
+      open (RULEFILE, "> /var/lib/cerdo/sensors/$sensor/cerdo.rules") or die "open($sensor/cerdo.rules): $!\n";
+      foreach my $srule (sort { $b <=> $a } (keys (%$sensor_rules))) {
+         print RULEFILE $sensor_rules->{$srule}, "\n";
+      }
+      close (RULEFILE);
+   }
 }
 
 sub read_config {
@@ -1291,7 +1336,8 @@ sub get_rules {
             my $rev = $1;
 
             my $enabled = 0;
-            if ( $rule =~ /^#/ ) {
+            # This also removes comments in rules (making them active)
+            if ( $rule =~ s/^# ?//g ) {
                $enabled = 0;
             } else {
                 $enabled = 1;
