@@ -75,6 +75,7 @@ our $MRULEDB                = {};
 our %DISABLEDB;
 our %ENABLEDB;
 
+# s/Local/Cerdo/g # When ready!
 use Local::State PO => '/var/lib/cerdo/state/cerdo-policy.state';
 use Local::State SE => '/var/lib/cerdo/state/cerdo-sensor.state';
 use Local::State SF => [ '/var/lib/cerdo/state/cerdo.state', readonly => 1 ];
