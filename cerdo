@@ -1231,12 +1231,12 @@ sub write_sensor_rules () {
          }
       }
  
-      my $sensor_path = "/var/lib/cerdo/sensors/" . $SE::SENSORS->{$sensor}->{'name'} . "/";
+      my $sensor_path = $SENSORSDIR . "/" . $SE::SENSORS->{$sensor}->{'name'} . "/";
       mkpath( $sensor_path ); 
       # Write $sensor_rules to disk (split them up if defined)
       warn "[*] Opening rule file";
-      open (RULEFILE, "> /var/lib/cerdo/sensors/" . $SE::SENSORS->{$sensor}->{'name'} . "/cerdo.rules")
-           or die "open(" . $SE::SENSORS->{$sensor}->{'name'} . "/cerdo.rules): $!\n";
+      open (RULEFILE, "> $SENSORSDIR/" . $SE::SENSORS->{$sensor}->{'name'} . "/cerdo.rules")
+           or die "open( $SENSORSDIR/" . $SE::SENSORS->{$sensor}->{'name'} . "/cerdo.rules): $!\n";
       foreach my $srule (sort { $b <=> $a } (keys (%$sensor_rules))) {
          print RULEFILE $sensor_rules->{$srule}, "\n";
       }
