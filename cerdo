@@ -23,6 +23,7 @@ use Curses::UI;
 #use DBI;
 use Cwd;
 use IO::File;
+use File::Path;
 use Getopt::Long qw/:config auto_version auto_help/;
 use Term::ReadKey;
 use Storable;
@@ -1177,7 +1178,7 @@ sub exit_dialog()
 
    if ( $return ) {
       # write new snort.conf / rulefiles to disk
-      # write_sensor_rules (); # not 100% done yet...
+      write_sensor_rules (); # not 100% done yet...
       exit(0);
    }
 }
@@ -1192,30 +1193,50 @@ sub write_sensor_rules () {
    # write enabled rules to $cerdo_dir/sensors/$sensor/rules/cerdo.rules
    # but if "$splitrules == 1" then writen the rules like :
    #  $cerdo_dir/sensors/$sensor/rules/<classtype>.rules
-
-   my $sensor_rules = {};
   
    # simple implementation first...
    # for each sensor
    foreach my $sensor (sort { $b <=> $a } (keys (%$SE::SENSORS))) {
+      next if not defined $sensor;
+      my $sensor_rules = {};
+      warn "[*] Found Sensor: ". $SE::SENSORS->{$sensor}->{'name'};
       # and for each policy attached to the sensor
       my $tmp_policies = $SE::SENSORS->{$sensor}->{'policies'};
       #foreach my $sensor_policy (sort { $b <=> $a } (keys ($SE::SENSORS->{$sensor}->{'policies'}))) {
       foreach my $sensor_policy (sort { $b <=> $a } (keys (%$tmp_policies))) {
-         # check if rule in policy exists in $MRULEDB
-         #if ( $PO::POLICIES->{$sensor_policy}->{'rules'}->{}
-         my $tmp_rules = $PO::POLICIES->{$sensor_policy}->{'rules'};
-         #foreach my $rule (sort { $b <=> $a } (keys ($PO::POLICIES->{$sensor_policy}->{'rules'}))) {
+         next if not defined $sensor_policy;
+         next if $sensor_policy eq '';
+         warn "[*] Checking sensor policy: " . $SE::SENSORS->{$sensor}->{'policies'}->{$sensor_policy};
+         my $got_policy = "";
+         foreach my $P (keys (%$PO::POLICIES)) {
+            next if not defined $P;
+            next if $P eq '';
+            next if not ( $PO::POLICIES->{$P}->{'name'} );
+            next if not ( $SE::SENSORS->{$sensor}->{'policies'}->{$sensor_policy} );
+            if ( $PO::POLICIES->{$P}->{'name'} eq $SE::SENSORS->{$sensor}->{'policies'}->{$sensor_policy} ) {
+               $got_policy = $P;
+            }
+         }
+         next if $got_policy eq '';
+         my $tmp_rules = $PO::POLICIES->{$got_policy}->{'rules'};
          foreach my $rule (sort { $b <=> $a } (keys (%$tmp_rules))) {
+            next if not defined $rule;
+            warn "[*] Found Rule: $rule";
             # if rules is defined, add it to $sensor_rules
-            if ( defined $PO::POLICIES->{$sensor_policy}->{'rules'}->{$rule} && defined  $MRULEDB->{$rule} ) {
+            # check if rule in policy exists in $MRULEDB
+            if ( defined $PO::POLICIES->{$got_policy}->{'rules'}->{$rule} && defined $MRULEDB->{$rule} ) {
                warn "[*] ADDING RULE: ". $MRULEDB->{$rule}->{'rule'};
                $sensor_rules->{$rule} = $MRULEDB->{$rule}->{'rule'};
             }
          }
       }
+ 
+      my $sensor_path = "/var/lib/cerdo/sensors/" . $SE::SENSORS->{$sensor}->{'name'} . "/";
+      mkpath( $sensor_path ); 
       # Write $sensor_rules to disk (split them up if defined)
-      open (RULEFILE, "> /var/lib/cerdo/sensors/$sensor/cerdo.rules") or die "open($sensor/cerdo.rules): $!\n";
+      warn "[*] Opening rule file";
+      open (RULEFILE, "> /var/lib/cerdo/sensors/" . $SE::SENSORS->{$sensor}->{'name'} . "/cerdo.rules")
+           or die "open(" . $SE::SENSORS->{$sensor}->{'name'} . "/cerdo.rules): $!\n";
       foreach my $srule (sort { $b <=> $a } (keys (%$sensor_rules))) {
          print RULEFILE $sensor_rules->{$srule}, "\n";
       }
